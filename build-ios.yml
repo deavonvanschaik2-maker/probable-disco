@@ -1,0 +1,68 @@
+name: Build iPhone app (unsigned IPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "www/**"
+      - "assets/**"
+      - "package.json"
+      - "capacitor.config.json"
+      - ".github/workflows/build-ios.yml"
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install packages
+        run: npm install
+
+      - name: Create the iOS project
+        run: npx cap add ios
+
+      - name: App icon and splash screen
+        continue-on-error: true
+        run: npx capacitor-assets generate --ios
+
+      - name: Privacy descriptions (camera, photos, microphone)
+        shell: bash
+        run: |
+          PL=ios/App/App/Info.plist
+          MSG="Switchboard uses this when you attach a photo or dictate a message."
+          for k in NSCameraUsageDescription NSPhotoLibraryUsageDescription NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription; do
+            /usr/libexec/PlistBuddy -c "Add :$k string '$MSG'" "$PL" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :$k '$MSG'" "$PL"
+          done
+
+      - name: Copy web files into the app
+        run: npx cap sync ios
+
+      - name: Build (no code signing)
+        shell: bash
+        run: |
+          if [ -d ios/App/App.xcworkspace ]; then TARGET="-workspace ios/App/App.xcworkspace"; else TARGET="-project ios/App/App.xcodeproj"; fi
+          xcodebuild $TARGET -scheme App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package the IPA
+        shell: bash
+        run: |
+          APP=$(find build/Build/Products -maxdepth 3 -name "App.app" | head -1)
+          echo "Found: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Switchboard-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Switchboard-unsigned-ipa
+          path: Switchboard-unsigned.ipa
+          if-no-files-found: error

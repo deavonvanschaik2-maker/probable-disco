@@ -1,0 +1,9 @@
+{
+  "appId": "app.switchboard.ai",
+  "appName": "Switchboard",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0e1016"
+  }
+}
